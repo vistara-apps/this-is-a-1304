@@ -98,7 +98,7 @@ class PinataService {
       return {
         hash: ipfsHash,
         url: ipfsUrl,
-        shareableUrl: `${window.location.origin}/share/${ipfsHash}`,
+        shareableUrl: typeof window !== 'undefined' ? `${window.location.origin}/share/${ipfsHash}` : `/share/${ipfsHash}`,
         metadata: pinataMetadata
       }
     } catch (error) {
