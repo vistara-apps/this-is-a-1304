@@ -12,8 +12,12 @@ export const API_CONFIG = {
   STRIPE: {
     PUBLISHABLE_KEY: import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_...',
     PRICE_ID_MONTHLY: import.meta.env.VITE_STRIPE_PRICE_ID_MONTHLY || 'price_...',
-    SUCCESS_URL: `${window.location.origin}/subscription/success`,
-    CANCEL_URL: `${window.location.origin}/subscription/cancel`
+    get SUCCESS_URL() {
+      return typeof window !== 'undefined' ? `${window.location.origin}/subscription/success` : '/subscription/success'
+    },
+    get CANCEL_URL() {
+      return typeof window !== 'undefined' ? `${window.location.origin}/subscription/cancel` : '/subscription/cancel'
+    }
   },
   
   // Pinata Configuration
