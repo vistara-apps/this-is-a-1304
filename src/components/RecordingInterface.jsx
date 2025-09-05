@@ -1,12 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Mic, MicOff, Square, Phone, AlertTriangle, Shield } from 'lucide-react'
+import { Mic, MicOff, Square, Phone, AlertTriangle, Shield, Cloud, Upload } from 'lucide-react'
+import toast from 'react-hot-toast'
 import Button from './Button'
+import pinataService from '../services/pinataService'
+import geolocationService from '../services/geolocationService'
 
-const RecordingInterface = ({ onSaveRecording, subscription }) => {
+const RecordingInterface = ({ onSaveRecording, subscription, userId }) => {
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [hasPermission, setHasPermission] = useState(null)
   const [alertedContacts, setAlertedContacts] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [currentLocation, setCurrentLocation] = useState(null)
   const mediaRecorderRef = useRef(null)
   const recordingRef = useRef(null)
   const intervalRef = useRef(null)
@@ -52,21 +57,48 @@ const RecordingInterface = ({ onSaveRecording, subscription }) => {
         }
       }
 
-      mediaRecorderRef.current.onstop = () => {
+      mediaRecorderRef.current.onstop = async () => {
         const blob = new Blob(chunks, { type: 'video/webm' })
         recordingRef.current = blob
         
-        // Save recording
+        // Get current location
+        let location = currentLocation
+        if (!location) {
+          try {
+            const position = await geolocationService.getCurrentPosition()
+            location = {
+              latitude: position.latitude,
+              longitude: position.longitude,
+              timestamp: position.timestamp
+            }
+            setCurrentLocation(location)
+          } catch (error) {
+            console.warn('Could not get location:', error)
+            location = null
+          }
+        }
+        
+        // Create recording metadata
         const recording = {
-          id: Date.now(),
+          id: `recording_${Date.now()}`,
           timestamp: new Date().toISOString(),
           duration: recordingTime,
           size: blob.size,
           alertedContacts: alertedContacts,
-          location: 'Demo Location', // In real app, get actual location
+          location: location,
+          userId: userId,
+          type: 'police_encounter'
         }
         
+        // Save locally first
         onSaveRecording(recording)
+        
+        // Upload to cloud storage if premium
+        if (subscription === 'premium') {
+          await handleCloudUpload(blob, recording)
+        } else {
+          toast.success('Recording saved locally')
+        }
         
         // Stop all tracks
         stream.getTracks().forEach(track => track.stop())
@@ -89,10 +121,37 @@ const RecordingInterface = ({ onSaveRecording, subscription }) => {
     }
   }
 
+  const handleCloudUpload = async (blob, recording) => {
+    setIsUploading(true)
+    try {
+      // Create file from blob
+      const file = new File([blob], `${recording.id}.webm`, { type: 'video/webm' })
+      
+      // Upload to IPFS via Pinata
+      const uploadResult = await pinataService.uploadRecording(file, {
+        userId: userId,
+        duration: recording.duration,
+        alertedContacts: recording.alertedContacts,
+        location: recording.location ? `${recording.location.latitude},${recording.location.longitude}` : null
+      })
+      
+      // Update recording with cloud URL
+      recording.cloudUrl = uploadResult.url
+      recording.ipfsHash = uploadResult.hash
+      
+      toast.success('Recording uploaded to secure cloud storage')
+    } catch (error) {
+      console.error('Cloud upload failed:', error)
+      toast.error('Failed to upload to cloud storage. Recording saved locally.')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   const alertContacts = () => {
     setAlertedContacts(true)
     // In a real app, this would send alerts to pre-configured contacts
-    alert('Emergency contacts have been notified!')
+    toast.success('Emergency contacts have been notified!')
   }
 
   if (hasPermission === false) {
@@ -170,6 +229,17 @@ const RecordingInterface = ({ onSaveRecording, subscription }) => {
                 <p className="text-green-400 font-medium">
                   ✓ Emergency contacts have been notified
                 </p>
+              </div>
+            )}
+
+            {isUploading && (
+              <div className="bg-blue-600/20 border border-blue-600/30 rounded-md p-4">
+                <div className="flex items-center">
+                  <Upload className="w-5 h-5 text-blue-400 mr-2 animate-pulse" />
+                  <p className="text-blue-400 font-medium">
+                    Uploading to secure cloud storage...
+                  </p>
+                </div>
               </div>
             )}
           </div>
